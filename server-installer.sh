@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Nome do instalador
+INSTALLER_NAME="websolucoesmkt"
+
 # Função para verificar se o usuário é root
 function check_root {
     if [ "$(id -u)" -ne 0 ]; then
@@ -8,8 +11,19 @@ function check_root {
     fi
 }
 
+# Função para exibir a mensagem inicial
+function display_welcome {
+    echo "***************************************"
+    echo "* Bem-vindo ao instalador $INSTALLER_NAME! *"
+    echo "***************************************"
+    echo
+}
+
 # Verificar se é root
 check_root
+
+# Exibir mensagem inicial
+display_welcome
 
 # Atualização inicial do sistema
 echo "Atualizando pacotes do sistema..."
@@ -123,5 +137,9 @@ echo "Fazendo deploy das stacks..."
 docker stack deploy -c traefik-stack.yml traefik
 docker stack deploy -c portainer-stack.yml portainer
 
-echo "Instalação concluída!"
+# Mensagem de conclusão
+echo
+echo "************************************************"
+echo "Instalação concluída pelo instalador $INSTALLER_NAME!"
 echo "Acesse o Portainer em https://$PORTAINER_DOMAIN"
+echo "************************************************"
