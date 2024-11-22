@@ -1,8 +1,5 @@
 #!/bin/bash
 
-# Nome do instalador
-INSTALLER_NAME="websolucoesmkt"
-
 # Função para verificar se o usuário é root
 function check_root {
     if [ "$(id -u)" -ne 0 ]; then
@@ -14,12 +11,11 @@ function check_root {
 # Verificar se é root
 check_root
 
-# Boas-vindas
-echo "***************************************"
-echo "* Bem-vindo ao instalador ${INSTALLER_NAME}! *"
-echo "***************************************"
-
 # Atualização inicial do sistema
+echo "***************************************"
+echo "* Bem-vindo ao instalador websolucoesmkt! *"
+echo "***************************************"
+echo ""
 echo "Atualizando pacotes do sistema..."
 apt update && apt upgrade -y
 
@@ -32,22 +28,17 @@ echo "Configuração inicial para o servidor Docker:"
 read -p "Digite o nome do servidor (exemplo: meu-servidor): " SERVER_NAME
 read -p "Digite o domínio para o Portainer (exemplo: painel.seusite.com): " PORTAINER_DOMAIN
 read -p "Digite o e-mail para o Let's Encrypt: " LETS_ENCRYPT_EMAIL
+read -p "Digite o nome de usuário do Portainer (padrão: admin): " ADMIN_USERNAME
+read -sp "Digite a senha para o Portainer: " ADMIN_PASSWORD
+echo ""
 
-# Inicializar Docker Swarm (caso não esteja inicializado)
-if ! docker info | grep -q "Swarm: active"; then
-    echo "Inicializando Docker Swarm..."
-    docker swarm init
-fi
+# Definir valores padrão caso não preenchidos
+ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+ADMIN_PASSWORD=${ADMIN_PASSWORD:-senhaSegura123}
 
-# Criar rede Docker compartilhada (caso não exista)
+# Criar rede Docker compartilhada
 echo "Criando rede Docker compartilhada..."
-docker network ls | grep -w "network_public" > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-    docker network create --driver=overlay --attachable network_public
-    echo "Rede network_public criada com sucesso!"
-else
-    echo "Rede network_public já existe, continuando..."
-fi
+docker network create --driver=overlay --attachable network_public
 
 # Criar volumes Docker compartilhados
 echo "Criando volumes Docker compartilhados..."
@@ -111,6 +102,9 @@ services:
   portainer:
     image: portainer/portainer-ce:2.20.1
     command: -H tcp://tasks.agent:9001 --tlsskipverify
+    environment:
+      - ADMIN_USERNAME=$ADMIN_USERNAME
+      - ADMIN_PASSWORD=$ADMIN_PASSWORD
     volumes:
       - portainer_data:/data
     networks:
@@ -133,13 +127,21 @@ volumes:
     external: true
 EOF
 
+# Inicializar Docker Swarm (caso não esteja inicializado)
+if ! docker info | grep -q "Swarm: active"; then
+    echo "Inicializando Docker Swarm..."
+    docker swarm init
+fi
+
 # Fazer deploy das stacks
 echo "Fazendo deploy das stacks..."
 docker stack deploy -c traefik-stack.yml traefik
 docker stack deploy -c portainer-stack.yml portainer
 
-# Mensagem de conclusão
+echo ""
 echo "************************************************"
-echo "Instalação concluída pelo instalador ${INSTALLER_NAME}!"
+echo "Instalação concluída pelo instalador websolucoesmkt!"
 echo "Acesse o Portainer em https://$PORTAINER_DOMAIN"
+echo "Usuário: $ADMIN_USERNAME"
+echo "Senha: $ADMIN_PASSWORD"
 echo "************************************************"
