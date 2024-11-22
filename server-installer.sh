@@ -28,9 +28,6 @@ echo "Configuração inicial para o servidor Docker:"
 read -p "Digite o nome do servidor (exemplo: meu-servidor): " SERVER_NAME
 read -p "Digite o domínio para o Portainer (exemplo: painel.seusite.com): " PORTAINER_DOMAIN
 read -p "Digite o e-mail para o Let's Encrypt: " LETS_ENCRYPT_EMAIL
-read -p "Digite o nome de usuário do Portainer (padrão: admin): " ADMIN_USERNAME
-read -sp "Digite a senha para o Portainer: " ADMIN_PASSWORD
-echo ""
 
 # Alterar o hostname da máquina
 echo "Alterando o hostname da máquina para $SERVER_NAME..."
@@ -38,11 +35,6 @@ hostnamectl set-hostname "$SERVER_NAME"
 
 # Atualizar /etc/hosts
 echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
-
-
-# Definir valores padrão caso não preenchidos
-ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-ADMIN_PASSWORD=${ADMIN_PASSWORD:-senhaSegura123}
 
 # Criar rede Docker compartilhada
 echo "Criando rede Docker compartilhada..."
@@ -110,9 +102,6 @@ services:
   portainer:
     image: portainer/portainer-ce:2.20.1
     command: -H tcp://tasks.agent:9001 --tlsskipverify
-    environment:
-      - ADMIN_USERNAME=$ADMIN_USERNAME
-      - ADMIN_PASSWORD=$ADMIN_PASSWORD
     volumes:
       - portainer_data:/data
     networks:
@@ -150,6 +139,4 @@ echo ""
 echo "************************************************"
 echo "Instalação concluída pelo instalador websolucoesmkt!"
 echo "Acesse o Portainer em https://$PORTAINER_DOMAIN"
-echo "Usuário: $ADMIN_USERNAME"
-echo "Senha: $ADMIN_PASSWORD"
 echo "************************************************"
