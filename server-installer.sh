@@ -123,6 +123,7 @@ services:
         - "traefik.http.routers.portainer.rule=Host(\`$PORTAINER_DOMAIN\`)"
         - "traefik.http.routers.portainer.entrypoints=websecure"
         - "traefik.http.routers.portainer.tls.certresolver=letsencryptresolver"
+        - "traefik.http.services.portainer.loadbalancer.server.port=9000"
 
 networks:
   network_public:
