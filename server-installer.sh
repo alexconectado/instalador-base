@@ -32,6 +32,14 @@ read -p "Digite o nome de usuário do Portainer (padrão: admin): " ADMIN_USERNA
 read -sp "Digite a senha para o Portainer: " ADMIN_PASSWORD
 echo ""
 
+# Alterar o hostname da máquina
+echo "Alterando o hostname da máquina para $SERVER_NAME..."
+hostnamectl set-hostname "$SERVER_NAME"
+
+# Atualizar /etc/hosts
+echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
+
+
 # Definir valores padrão caso não preenchidos
 ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
 ADMIN_PASSWORD=${ADMIN_PASSWORD:-senhaSegura123}
