@@ -11,23 +11,17 @@ function check_root {
     fi
 }
 
-# Função para exibir a mensagem inicial
-function display_welcome {
-    echo "***************************************"
-    echo "* Bem-vindo ao instalador $INSTALLER_NAME! *"
-    echo "***************************************"
-    echo
-}
-
 # Verificar se é root
 check_root
 
-# Exibir mensagem inicial
-display_welcome
+# Boas-vindas
+echo "***************************************"
+echo "* Bem-vindo ao instalador ${INSTALLER_NAME}! *"
+echo "***************************************"
 
 # Atualização inicial do sistema
 echo "Atualizando pacotes do sistema..."
-apt update && apt upgrade -y apparmor-utils
+apt update && apt upgrade -y
 
 # Instalar Docker e Docker Compose
 echo "Instalando Docker e Docker Compose..."
@@ -39,9 +33,21 @@ read -p "Digite o nome do servidor (exemplo: meu-servidor): " SERVER_NAME
 read -p "Digite o domínio para o Portainer (exemplo: painel.seusite.com): " PORTAINER_DOMAIN
 read -p "Digite o e-mail para o Let's Encrypt: " LETS_ENCRYPT_EMAIL
 
-# Criar rede Docker compartilhada
+# Inicializar Docker Swarm (caso não esteja inicializado)
+if ! docker info | grep -q "Swarm: active"; then
+    echo "Inicializando Docker Swarm..."
+    docker swarm init
+fi
+
+# Criar rede Docker compartilhada (caso não exista)
 echo "Criando rede Docker compartilhada..."
-docker network create --driver=overlay --attachable network_public
+docker network ls | grep -w "network_public" > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+    docker network create --driver=overlay --attachable network_public
+    echo "Rede network_public criada com sucesso!"
+else
+    echo "Rede network_public já existe, continuando..."
+fi
 
 # Criar volumes Docker compartilhados
 echo "Criando volumes Docker compartilhados..."
@@ -126,20 +132,13 @@ volumes:
     external: true
 EOF
 
-# Inicializar Docker Swarm (caso não esteja inicializado)
-if ! docker info | grep -q "Swarm: active"; then
-    echo "Inicializando Docker Swarm..."
-    docker swarm init
-fi
-
 # Fazer deploy das stacks
 echo "Fazendo deploy das stacks..."
 docker stack deploy -c traefik-stack.yml traefik
 docker stack deploy -c portainer-stack.yml portainer
 
 # Mensagem de conclusão
-echo
 echo "************************************************"
-echo "Instalação concluída pelo instalador $INSTALLER_NAME!"
+echo "Instalação concluída pelo instalador ${INSTALLER_NAME}!"
 echo "Acesse o Portainer em https://$PORTAINER_DOMAIN"
 echo "************************************************"
