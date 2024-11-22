@@ -27,7 +27,7 @@ display_welcome
 
 # Atualização inicial do sistema
 echo "Atualizando pacotes do sistema..."
-apt update && apt upgrade -y
+apt update && apt upgrade -y apparmor-utils
 
 # Instalar Docker e Docker Compose
 echo "Instalando Docker e Docker Compose..."
