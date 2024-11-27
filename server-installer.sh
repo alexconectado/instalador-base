@@ -36,9 +36,15 @@ hostnamectl set-hostname "$SERVER_NAME"
 # Atualizar /etc/hosts
 echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
 
+# Inicializar Docker Swarm (caso não esteja inicializado)
+if ! docker info | grep -q "Swarm: active"; then
+    echo "Inicializando Docker Swarm..."
+    docker swarm init
+fi
+
 # Criar rede Docker compartilhada
 echo "Criando rede Docker compartilhada..."
-docker network create --driver=overlay --attachable network_public
+docker network create --driver=overlay --attachable --scope swarm network_public
 
 # Criar volumes Docker compartilhados
 echo "Criando volumes Docker compartilhados..."
@@ -123,12 +129,6 @@ volumes:
   portainer_data:
     external: true
 EOF
-
-# Inicializar Docker Swarm (caso não esteja inicializado)
-if ! docker info | grep -q "Swarm: active"; then
-    echo "Inicializando Docker Swarm..."
-    docker swarm init
-fi
 
 # Fazer deploy das stacks
 echo "Fazendo deploy das stacks..."
