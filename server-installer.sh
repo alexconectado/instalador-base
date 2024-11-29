@@ -8,20 +8,51 @@ function check_root {
     fi
 }
 
+# Função para desinstalar os serviços
+function uninstall {
+    echo "Removendo stacks do Docker..."
+    docker stack rm traefik
+    docker stack rm portainer
+    echo "Aguardando remoção das stacks..."
+    sleep 10
+
+    echo "Removendo redes do Docker..."
+    docker network rm network_public || echo "Rede network_public já foi removida."
+
+    echo "Removendo volumes do Docker..."
+    docker volume rm volume_swarm_certificates portainer_data || echo "Volumes já foram removidos."
+
+    echo "Removendo logs do instalador..."
+    rm -f /var/log/websolucoesmkt-installer.log || echo "Log já foi removido."
+
+    echo "Desinstalação concluída."
+    exit 0
+}
+
 # Verificar se é root
 check_root
 
+# Menu de opções
+echo "***************************************"
+echo "* Instalador websolucoesmkt!          *"
+echo "***************************************"
+echo ""
+echo "Escolha uma opção:"
+echo "1. Instalar serviços"
+echo "2. Desinstalar serviços"
+read -p "Digite sua escolha (1 ou 2): " CHOICE
+
+if [ "$CHOICE" == "2" ]; then
+    uninstall
+fi
+
+# Fluxo de instalação (mesmo conteúdo ajustado para permissões, etc.)
 LOGFILE="/var/log/websolucoesmkt-installer.log"
 exec > >(tee -i $LOGFILE) 2>&1
 
-echo "***************************************"
-echo "* Bem-vindo ao instalador websolucoesmkt! *"
-echo "***************************************"
-echo ""
 echo "Atualizando pacotes do sistema..."
-apt update && apt upgrade -y
+apt update -yq && apt upgrade -yq
 
-# Verificar dependências
 echo "Verificando dependências..."
 if ! command -v docker &> /dev/null; then
     echo "Docker não está instalado. Instalando agora..."
@@ -53,48 +84,37 @@ if ! [[ "$LETS_ENCRYPT_EMAIL" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}
     exit 1
 fi
 
-# Alterar o hostname da máquina
 echo "Alterando o hostname da máquina para $SERVER_NAME..."
 hostnamectl set-hostname "$SERVER_NAME"
 echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
 
-# Inicializar Docker Swarm (caso não esteja inicializado)
 if ! docker info | grep -q "Swarm: active"; then
     echo "Inicializando Docker Swarm..."
-    
-    # Detecta automaticamente o primeiro IP público disponível
     ADVERTISE_ADDR=$(hostname -I | awk '{print $1}')
-    
-    # Inicializa o Swarm com o endereço detectado
     docker swarm init --advertise-addr "$ADVERTISE_ADDR"
-    
     if [ $? -ne 0 ]; then
         echo "Erro ao inicializar o Docker Swarm. Verifique os logs para mais informações."
         exit 1
     fi
 fi
 
-# Criar rede Docker compartilhada
 echo "Criando rede Docker compartilhada..."
 docker network create --driver=overlay --attachable --scope swarm network_public
 
-# Criar volumes Docker compartilhados
 echo "Criando volumes Docker compartilhados..."
 docker volume create volume_swarm_certificates
 docker volume create portainer_data
 
-# Ajustar permissões no volume de certificados
-docker run --rm -v volume_swarm_certificates:/data alpine sh -c "chmod -R 700 /data"
+echo "Ajustando permissões no volume de certificados..."
+docker run --rm -v volume_swarm_certificates:/data alpine sh -c "touch /data/acme.json && chmod 600 /data/acme.json"
 
-# Gerar arquivo docker-compose para Traefik
 echo "Gerando arquivo docker-compose para o Traefik..."
 cat <<EOF > traefik-stack.yml
 version: "3.7"
-
 services:
   traefik:
     image: traefik:2.11.2
-    user: "1000:1000"  # Usuário não privilegiado
+    user: "0:0"
     command:
       - "--api.dashboard=true"
       - "--entrypoints.dashboard.address=127.0.0.1:8080"
@@ -114,10 +134,9 @@ services:
       - "443:443"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
-      - "volume_swarm_certificates:/etc/traefik/letsencrypt:ro"  # Somente leitura
+      - "volume_swarm_certificates:/etc/traefik/letsencrypt:ro"
     networks:
       - network_public
-
 networks:
   network_public:
     external: true
@@ -126,11 +145,9 @@ volumes:
     external: true
 EOF
 
-# Gerar arquivo docker-compose para o Portainer
 echo "Gerando arquivo docker-compose para o Portainer..."
 cat <<EOF > portainer-stack.yml
 version: "3.7"
-
 services:
   agent:
     image: portainer/agent:2.20.1
@@ -141,7 +158,6 @@ services:
       - network_public
     deploy:
       mode: global
-
   portainer:
     image: portainer/portainer-ce:2.20.1
     command: -H tcp://tasks.agent:9001 --tlsskipverify
@@ -158,7 +174,6 @@ services:
         - "traefik.http.routers.portainer.entrypoints=websecure"
         - "traefik.http.routers.portainer.tls.certresolver=letsencryptresolver"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
-
 networks:
   network_public:
     external: true
@@ -167,12 +182,10 @@ volumes:
     external: true
 EOF
 
-# Fazer deploy das stacks
 echo "Fazendo deploy das stacks..."
 docker stack deploy -c traefik-stack.yml traefik
 docker stack deploy -c portainer-stack.yml portainer
 
-# Verificar se os serviços subiram
 echo "Verificando serviços em execução..."
 for i in {1..30}; do
     if docker service ls | grep -q "traefik" && docker service ls | grep -q "portainer"; then
