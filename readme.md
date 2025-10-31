@@ -1,78 +1,165 @@
-Server Installer Script
-Descrição: Este script automatiza a configuração inicial de servidores com base no Ubuntu 22.04. Ele instala e configura o Portainer, Traefik, e solicita informações do usuário para personalização, como nome do servidor, domínio do Portainer e e-mail para o Let's Encrypt.
+# 🐳 Instalador Base - Docker + Traefik + Portainer
 
-Recursos:
+Script automatizado para instalação e configuração de ambiente Docker com Traefik (proxy reverso) e Portainer (gerenciamento) em Ubuntu 22.04/24.04.
 
-Configurações iniciais do servidor, como atualização de pacotes.
-Instalação e configuração do Docker e Docker Compose.
-Configuração do Traefik como proxy reverso com suporte a HTTPS via Let's Encrypt.
-Configuração do Portainer para gerenciar contêineres Docker.
-Suporte para entrada de dados do usuário para personalização:
-Nome do servidor.
-Domínio para o Portainer.
-E-mail para certificados HTTPS.
-Pré-requisitos:
+## 🚀 Instalação Rápida
 
-Servidor rodando Ubuntu 22.04.
-Acesso root ou usuário com permissões de sudo.
-Um domínio configurado e apontando para o IP do servidor.
-Instruções de Uso:
+```bash
+# Baixar o script
+wget https://raw.githubusercontent.com/alexconectado/instalador-base/main/install-docker-stack.sh
 
-Baixe o script:
-bash
-Copiar código
-git clone https://github.com/seu-usuario/server-installer.git
-cd server-installer
-Torne o script executável:
-bash
-Copiar código
-chmod +x server-installer.sh
-Execute o script:
-bash
-Copiar código
-sudo ./server-installer.sh
-Durante a execução, o script solicitará:
-Nome do servidor.
-Domínio do Portainer (ex.: painel.seudominio.com.br).
-E-mail para certificados HTTPS.
-Acessando o Portainer:
+# Dar permissão de execução
+chmod +x install-docker-stack.sh
 
-Após a instalação, acesse o Portainer no domínio configurado:
-bash
-Copiar código
-https://seu-dominio.com
-Estrutura de Stacks:
+# Executar como root
+sudo ./install-docker-stack.sh
+```
 
-Traefik:
-Configuração para gerenciar certificados SSL com Let's Encrypt.
-Proxy reverso com suporte para HTTP e HTTPS.
-Portainer:
-Gerenciamento centralizado de contêineres Docker.
-Acesso seguro com autenticação.
-Notas:
+## ✨ Funcionalidades
 
-Certifique-se de que o domínio fornecido esteja apontando corretamente para o servidor.
-Se houver problemas com certificados SSL, verifique os logs do Traefik:
-bash
-Copiar código
-docker logs traefik
-Exemplo de Configuração:
+- ✅ Instalação completa do Docker CE (versão oficial)
+- ✅ Docker Swarm configurado automaticamente
+- ✅ Traefik v3.0 com SSL automático (Let's Encrypt)
+- ✅ Portainer 2.21.0 para gerenciamento visual
+- ✅ Firewall UFW configurado
+- ✅ Redirecionamento HTTP → HTTPS automático
+- ✅ Health checks e restart policies
+- ✅ Opção de desinstalação completa
 
-Entrada no Script:
-vbnet
-Copiar código
-Digite o nome do servidor: meu-servidor
-Digite o domínio do Portainer: painel.meudominio.com.br
-Digite um e-mail para o Let's Encrypt: admin@meudominio.com
-Resultado:
-O Traefik estará configurado para gerenciar o domínio painel.meudominio.com.br.
-O Portainer estará acessível em:
-arduino
-Copiar código
-https://painel.meudominio.com.br
-Contribuições:
+## 📋 Pré-requisitos
 
-Sinta-se à vontade para abrir uma issue ou enviar um pull request se tiver ideias ou melhorias.
-Licença:
+- Ubuntu 22.04 ou 24.04 LTS
+- Acesso root ou sudo
+- Domínio apontando para o IP do servidor
+- Portas 80, 443, 22 abertas
 
-Este projeto está licenciado sob a MIT License.
+## 🛠️ O que será instalado
+
+| Serviço | Versão | Função |
+|---------|--------|--------|
+| Docker CE | Latest | Container runtime |
+| Traefik | v3.0 | Proxy reverso + SSL |
+| Portainer | 2.21.0 | Gerenciamento web |
+| UFW | Latest | Firewall |
+
+## 📖 Como usar
+
+### 1. Instalação
+
+```bash
+sudo ./install-docker-stack.sh
+```
+
+O script irá solicitar:
+- Nome do servidor
+- Domínio para o Portainer (ex: `painel.seusite.com`)
+- E-mail para Let's Encrypt
+
+### 2. Desinstalação
+
+```bash
+sudo ./install-docker-stack.sh
+# Escolha opção 2
+```
+
+## 🌐 Acesso após instalação
+
+- **Portainer**: `https://seu-dominio.com`
+- **Traefik Dashboard**: `http://localhost:8080` (apenas local)
+
+## 📊 Comandos Úteis
+
+```bash
+# Listar serviços
+docker service ls
+
+# Ver logs de um serviço
+docker service logs -f portainer_portainer
+
+# Listar stacks
+docker stack ls
+
+# Remover uma stack
+docker stack rm portainer
+
+# Status do Swarm
+docker node ls
+```
+
+## 🔒 Segurança
+
+- Firewall UFW configurado automaticamente
+- SSL/TLS via Let's Encrypt
+- Docker socket protegido
+- Traefik dashboard apenas local
+
+## 🐛 Troubleshooting
+
+### Serviços não sobem
+
+```bash
+# Verificar logs
+docker service logs traefik_traefik
+docker service logs portainer_portainer
+
+# Verificar status
+docker service ps traefik_traefik --no-trunc
+```
+
+### SSL não funciona
+
+- Verifique se o domínio aponta para o IP correto
+- Aguarde alguns minutos para propagação DNS
+- Veja logs do Traefik: `docker service logs traefik_traefik`
+
+### Portainer não acessível
+
+```bash
+# Verificar se está rodando
+docker service ps portainer_portainer
+
+# Recriar serviço
+docker service update --force portainer_portainer
+```
+
+## 📁 Arquivos gerados
+
+- `/var/log/websolucoesmkt-installer.log` - Log de instalação
+- `traefik-stack.yml` - Configuração do Traefik
+- `portainer-stack.yml` - Configuração do Portainer
+
+## 🔄 Atualização
+
+Para atualizar versões:
+
+```bash
+# Editar os arquivos *-stack.yml
+nano traefik-stack.yml
+
+# Redeployar
+docker stack deploy -c traefik-stack.yml traefik
+```
+
+## 💡 Próximos passos
+
+Após instalação bem-sucedida:
+
+1. Acesse o Portainer e crie sua conta admin
+2. Configure seus containers/stacks
+3. Adicione suas aplicações
+
+## 📞 Suporte
+
+Em caso de problemas:
+- Verifique os logs: `docker service logs <service_name>`
+- Consulte a documentação oficial do Docker
+- Issues no GitHub
+
+## 📄 Licença
+
+MIT License - Livre para uso comercial e pessoal
+
+---
+
+**Desenvolvido por**: Alex Conectado  
+**Repositório**: github.com/alexconectado/instalador-base
