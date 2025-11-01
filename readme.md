@@ -65,8 +65,7 @@ sudo ./install-docker-stack.sh
 ## ğŸŒ Acesso apÃ³s instalaÃ§Ã£o
 
 - **Portainer**: `https://seu-dominio.com`
-- **Traefik Dashboard**: `http://localhost:8080` (apenas local)
-
+- **Traefik Dashboard: desativado por padrão (mais seguro). Veja abaixo como habilitar opcionalmente.\n
 ## ğŸ“Š Comandos Ãšteis
 
 ```bash
@@ -91,8 +90,7 @@ docker node ls
 - Firewall UFW configurado automaticamente
 - SSL/TLS via Let's Encrypt
 - Docker socket protegido
-- Traefik dashboard apenas local
-
+- Traefik Dashboard: desativado por padrão (mais seguro). Veja abaixo como habilitar opcionalmente.\n
 ## ğŸ› Troubleshooting
 
 ### ServiÃ§os nÃ£o sobem
@@ -163,3 +161,16 @@ MIT License - Livre para uso comercial e pessoal
 
 **Desenvolvido por**: Alex Conectado  
 **RepositÃ³rio**: github.com/alexconectado/instalador-base
+
+### Opcional: Habilitar dashboard do Traefik com segurança
+
+Por padrão o painel está desabilitado. Se precisar habilitar temporariamente:
+
+1. Edite `traefik-stack.yml` e adicione:
+   - `--api.dashboard=true`
+   - (opcional) Exposição via túnel SSH em vez de porta pública, por exemplo:
+     - Não publique a porta 8080 no host.
+     - Use: `ssh -L 8080:127.0.0.1:8080 root@SEU_SERVIDOR` e acesse `http://localhost:8080`.
+2. Alternativamente, exponha via Traefik com proteção extra (NUNCA em produção sem proteção):
+   - Restrinja por IP e/ou Basic Auth.
+3. Após uso, desabilite novamente para manter a segurança.
