@@ -322,7 +322,7 @@ echo "************************************************"
 echo ""
 echo "📋 Informações importantes:"
 echo "   • Portainer: https://$PORTAINER_DOMAIN"
-echo "   • Traefik Dashboard: http://localhost:8080"
+echo "   • Traefik Dashboard: desativado por padr�o"
 echo "   • Logs: $LOGFILE"
 echo ""
 echo "📌 Próximos passos:"
@@ -337,6 +337,7 @@ echo "   • Listar serviços: docker service ls"
 echo "   • Remover stack: docker stack rm <stack_name>"
 echo ""
 echo "************************************************"
+
 
 
 
