@@ -189,10 +189,10 @@ services:
       - "--api.dashboard=true"
       - "--api.insecure=false"
       - "--entrypoints.dashboard.address=127.0.0.1:8080"
-      - "--providers.docker.swarmMode=true"
-      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=network_public"
+      - "--providers.swarm=true"
+      - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
+      - "--providers.swarm.exposedbydefault=false"
+      - "--providers.swarm.network=network_public"
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
@@ -209,6 +209,9 @@ services:
         mode: host
       - target: 443
         published: 443
+        mode: host
+      - target: 8080
+        published: 8080
         mode: host
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
@@ -338,3 +341,4 @@ echo "   • Listar serviços: docker service ls"
 echo "   • Remover stack: docker stack rm <stack_name>"
 echo ""
 echo "************************************************"
+
