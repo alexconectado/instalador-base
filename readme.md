@@ -1,176 +1,116 @@
-# 🐳 Instalador Base - Docker + Traefik + Portainer
+🚀 Instalador Base — Docker + Traefik + Portainer
 
 Script automatizado para instalação e configuração de ambiente Docker com Traefik (proxy reverso) e Portainer (gerenciamento) em Ubuntu 22.04/24.04.
 
-## 🚀 Instalação Rápida
+⚡ Instalação Rápida
+bash <(curl -sSL https://raw.githubusercontent.com/alexconectado/instalador-base/main/install-docker-stack.sh)
 
-```bash
-# Baixar o script
+Ou manual:
+
 wget https://raw.githubusercontent.com/alexconectado/instalador-base/main/install-docker-stack.sh
-
-# Dar permissão de execução
 chmod +x install-docker-stack.sh
-
-# Executar como root
 sudo ./install-docker-stack.sh
-```
-
-## ✨ Funcionalidades
-
-- ✅ Instalação completa do Docker CE (versão oficial)
-- ✅ Docker Swarm configurado automaticamente
-- ✅ Traefik v3.0 com SSL automático (Let's Encrypt)
-- ✅ Portainer 2.21.0 para gerenciamento visual
-- ✅ Firewall UFW configurado
-- ✅ Redirecionamento HTTP → HTTPS automático
-- ✅ Health checks e restart policies
-- ✅ Opção de desinstalação completa
-
-## 📋 Pré-requisitos
-
-- Ubuntu 22.04 ou 24.04 LTS
-- Acesso root ou sudo
-- Domínio apontando para o IP do servidor
-- Portas 80, 443, 22 abertas
-
-## 🛠️ O que será instalado
-
-| Serviço | Versão | Função |
-|---------|--------|--------|
-| Docker CE | Latest | Container runtime |
-| Traefik | v3.0 | Proxy reverso + SSL |
-| Portainer | 2.21.0 | Gerenciamento web |
-| UFW | Latest | Firewall |
-
-## 📖 Como usar
-
-### 1. Instalação
-
-```bash
+✨ Funcionalidades
+✅ Instalação completa do Docker CE (repositório oficial)
+✅ Docker Swarm configurado automaticamente
+✅ Traefik v3 com SSL automático (Let's Encrypt)
+✅ Portainer 2.21 para gerenciamento visual
+✅ Firewall UFW configurado automaticamente
+✅ Redirecionamento HTTP → HTTPS
+✅ Fail2Ban para proteção básica SSH
+✅ Health checks e restart policies
+✅ Opção de desinstalação completa
+📋 Pré-requisitos
+Ubuntu 22.04 ou 24.04 LTS
+Acesso root ou sudo
+Domínio apontando para o IP da VPS
+Portas abertas: 22, 80, 443
+🛠️ O que será instalado
+Serviço	Versão	Função
+Docker CE	Latest	Container runtime
+Traefik	v3	Proxy reverso + SSL
+Portainer	2.21	Gerenciamento web
+UFW	Latest	Firewall
+Fail2Ban	Latest	Proteção contra brute
+📖 Como usar
+1. Instalação
 sudo ./install-docker-stack.sh
-```
 
 O script irá solicitar:
-- Nome do servidor
-- Domínio para o Portainer (ex: `painel.seusite.com`)
-- E-mail para Let's Encrypt
 
-### 2. Desinstalação
-
-```bash
+Nome do servidor
+Domínio do Portainer (ex: panel.seusite.com)
+E-mail para Let's Encrypt
+Configuração de cluster (opcional)
+2. Desinstalação
 sudo ./install-docker-stack.sh
-# Escolha opção 2
-```
 
-## 🌐 Acesso após instalação
+Escolha a opção 2 no menu.
 
-- **Portainer**: `https://seu-dominio.com`
-- **Traefik Dashboard: desativado por padr�o (mais seguro). Veja abaixo como habilitar opcionalmente.\n
-## 📊 Comandos Úteis
-
-```bash
+🌐 Acesso após instalação
+Portainer:
+👉 https://seu-dominio.com
+Traefik Dashboard:
+❌ Desativado por padrão (segurança)
+📊 Comandos úteis
 # Listar serviços
 docker service ls
 
-# Ver logs de um serviço
+# Ver logs
 docker service logs -f portainer_portainer
 
 # Listar stacks
 docker stack ls
 
-# Remover uma stack
+# Remover stack
 docker stack rm portainer
 
 # Status do Swarm
 docker node ls
-```
-
-## 🔒 Segurança
-
-- Firewall UFW configurado automaticamente
-- SSL/TLS via Let's Encrypt
-- Docker socket protegido
-- Traefik Dashboard: desativado por padr�o (mais seguro). Veja abaixo como habilitar opcionalmente.\n
-## 🐛 Troubleshooting
-
-### Serviços não sobem
-
-```bash
-# Verificar logs
+🔒 Segurança
+Firewall UFW ativo
+SSL automático com Let's Encrypt
+Docker socket restrito
+Fail2Ban ativo
+Traefik Dashboard desabilitado por padrão
+🧰 Troubleshooting
+❌ Serviços não sobem
 docker service logs traefik_traefik
 docker service logs portainer_portainer
-
-# Verificar status
 docker service ps traefik_traefik --no-trunc
-```
-
-### SSL não funciona
-
-- Verifique se o domínio aponta para o IP correto
-- Aguarde alguns minutos para propagação DNS
-- Veja logs do Traefik: `docker service logs traefik_traefik`
-
-### Portainer não acessível
-
-```bash
-# Verificar se está rodando
+❌ SSL não funciona
+Verifique o DNS do domínio
+Aguarde propagação
+Ver logs:
+docker service logs traefik_traefik
+❌ Portainer não acessível
 docker service ps portainer_portainer
-
-# Recriar serviço
 docker service update --force portainer_portainer
-```
-
-## 📁 Arquivos gerados
-
-- `/var/log/websolucoesmkt-installer.log` - Log de instalação
-- `traefik-stack.yml` - Configuração do Traefik
-- `portainer-stack.yml` - Configuração do Portainer
-
-## 🔄 Atualização
+📁 Arquivos gerados
+/var/log/vps-bootstrap.log
+/opt/stacks/traefik-stack.yml
+/opt/stacks/portainer-stack.yml
+🔄 Atualização
 
 Para atualizar versões:
 
-```bash
-# Editar os arquivos *-stack.yml
-nano traefik-stack.yml
+nano /opt/stacks/traefik-stack.yml
+docker stack deploy -c /opt/stacks/traefik-stack.yml traefik
+💡 Próximos passos
+Criar conta no Portainer
+Subir suas stacks
+Configurar aplicações
+📞 Suporte
 
-# Redeployar
-docker stack deploy -c traefik-stack.yml traefik
-```
+Logs:
 
-## 💡 Próximos passos
+docker service logs <service>
+Issues no GitHub
+📄 Licença
 
-Após instalação bem-sucedida:
+MIT License — livre para uso pessoal e comercial
 
-1. Acesse o Portainer e crie sua conta admin
-2. Configure seus containers/stacks
-3. Adicione suas aplicações
+👨‍💻 Autor
 
-## 📞 Suporte
-
-Em caso de problemas:
-- Verifique os logs: `docker service logs <service_name>`
-- Consulte a documentação oficial do Docker
-- Issues no GitHub
-
-## 📄 Licença
-
-MIT License - Livre para uso comercial e pessoal
-
----
-
-**Desenvolvido por**: Alex Conectado  
-**Repositório**: github.com/alexconectado/instalador-base
-
-### Opcional: Habilitar dashboard do Traefik com seguran�a
-
-Por padr�o o painel est� desabilitado. Se precisar habilitar temporariamente:
-
-1. Edite `traefik-stack.yml` e adicione:
-   - `--api.dashboard=true`
-   - (opcional) Exposi��o via t�nel SSH em vez de porta p�blica, por exemplo:
-     - N�o publique a porta 8080 no host.
-     - Use: `ssh -L 8080:127.0.0.1:8080 root@SEU_SERVIDOR` e acesse `http://localhost:8080`.
-2. Alternativamente, exponha via Traefik com prote��o extra (NUNCA em produ��o sem prote��o):
-   - Restrinja por IP e/ou Basic Auth.
-3. Ap�s uso, desabilite novamente para manter a seguran�a.
+Alex Conectado
+https://github.com/alexconectado/instalador-base
