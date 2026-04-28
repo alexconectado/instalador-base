@@ -1,0 +1,51 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:${TRAEFIK_VERSION}
+    command:
+      - "--api.dashboard=false"
+      - "--api.insecure=false"
+      - "--providers.swarm=true"
+      - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
+      - "--providers.swarm.exposedbydefault=false"
+      - "--providers.swarm.network=${NETWORK_NAME}"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencryptresolver.acme.email=${LETS_ENCRYPT_EMAIL}"
+      - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/letsencrypt/acme.json"
+      - "--log.level=INFO"
+      - "--accesslog=true"
+
+    ports:
+      - target: 80
+        published: 80
+        mode: host
+      - target: 443
+        published: 443
+        mode: host
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CERT_VOLUME}:/etc/traefik/letsencrypt
+
+    networks:
+      - ${NETWORK_NAME}
+
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+
+networks:
+  ${NETWORK_NAME}:
+    external: true
+
+volumes:
+  ${CERT_VOLUME}:
+    external: true
