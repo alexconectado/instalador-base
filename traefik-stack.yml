@@ -3,21 +3,32 @@ version: "3.8"
 services:
   traefik:
     image: traefik:${TRAEFIK_VERSION}
+
+    environment:
+      - DOCKER_API_VERSION=1.41
+
     command:
       - "--api.dashboard=false"
       - "--api.insecure=false"
+
       - "--providers.swarm=true"
       - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
       - "--providers.swarm.exposedbydefault=false"
       - "--providers.swarm.network=${NETWORK_NAME}"
+      - "--providers.swarm.watch=true"
+      - "--providers.swarm.refreshseconds=15"
+
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencryptresolver.acme.email=${LETS_ENCRYPT_EMAIL}"
       - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/letsencrypt/acme.json"
+
       - "--log.level=INFO"
       - "--accesslog=true"
 
@@ -37,10 +48,15 @@ services:
       - ${NETWORK_NAME}
 
     deploy:
+      mode: replicated
       replicas: 1
       placement:
         constraints:
           - node.role == manager
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
 
 networks:
   ${NETWORK_NAME}:
