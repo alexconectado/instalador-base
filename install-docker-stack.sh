@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+trap 'echo "[ERRO] Falha na linha $LINENO. Comando: $BASH_COMMAND"' ERR
 
 TRAEFIK_VERSION="v3.0"
 PORTAINER_VERSION="2.21.0"
@@ -14,18 +15,9 @@ PORTAINER_VOLUME="portainer_data"
 INSTALL_DIR="/opt/stacks"
 LOGFILE="/var/log/vps-bootstrap.log"
 
-log() {
-  echo -e "\n[INFO] $*"
-}
-
-warn() {
-  echo -e "\n[AVISO] $*"
-}
-
-fail() {
-  echo -e "\n[ERRO] $*" >&2
-  exit 1
-}
+log() { echo -e "\n[INFO] $*"; }
+warn() { echo -e "\n[AVISO] $*"; }
+fail() { echo -e "\n[ERRO] $*" >&2; exit 1; }
 
 check_root() {
   [ "$(id -u)" -eq 0 ] || fail "Execute como root."
@@ -39,46 +31,28 @@ ask_required() {
   local var_name="$1"
   local label="$2"
   local value=""
-
   read -rp "$label: " value
-
   [ -n "$value" ] || fail "$label não pode ficar vazio."
-
   printf -v "$var_name" "%s" "$value"
 }
 
 validate_email() {
   local email="$1"
-
-  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
-    || fail "E-mail inválido: $email"
+  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || fail "E-mail inválido: $email"
 }
 
 install_base_packages() {
   log "Atualizando sistema e instalando pacotes base..."
-
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-
-  apt-get install -y \
-    ca-certificates \
-    curl \
-    gnupg \
-    lsb-release \
-    ufw \
-    dnsutils \
-    jq \
-    htop \
-    nano \
-    vim \
-    unzip \
-    fail2ban
+  apt-get install -y ca-certificates curl gnupg lsb-release ufw dnsutils jq htop nano vim unzip fail2ban
 }
 
 install_docker() {
   if command -v docker >/dev/null 2>&1; then
     log "Docker já instalado."
     docker --version
+    docker compose version || true
     return
   fi
 
@@ -95,19 +69,11 @@ install_docker() {
 
   chmod a+r /etc/apt/keyrings/docker.gpg
 
-  echo \
-    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-    $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
     > /etc/apt/sources.list.d/docker.list
 
   apt-get update -y
-
-  apt-get install -y \
-    docker-ce \
-    docker-ce-cli \
-    containerd.io \
-    docker-buildx-plugin \
-    docker-compose-plugin
+  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
   systemctl enable docker
   systemctl start docker
@@ -118,9 +84,7 @@ install_docker() {
 
 configure_hostname() {
   log "Configurando hostname..."
-
   hostnamectl set-hostname "$SERVER_NAME"
-
   grep -q "$SERVER_NAME" /etc/hosts || echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
 }
 
@@ -136,7 +100,7 @@ configure_firewall() {
   ufw allow 443/tcp comment "HTTPS"
 
   if [ "$CLUSTER_MODE" = "s" ]; then
-    warn "Modo cluster ativado. As portas do Swarm serão abertas."
+    warn "Modo cluster ativado."
 
     if [ -n "${CLUSTER_ALLOWED_IP:-}" ]; then
       ufw allow from "$CLUSTER_ALLOWED_IP" to any port 2377 proto tcp comment "Docker Swarm Manager"
@@ -144,11 +108,7 @@ configure_firewall() {
       ufw allow from "$CLUSTER_ALLOWED_IP" to any port 7946 proto udp comment "Docker Swarm Gossip UDP"
       ufw allow from "$CLUSTER_ALLOWED_IP" to any port 4789 proto udp comment "Docker Swarm Overlay"
     else
-      warn "Nenhum IP de cluster informado. Abrindo portas Swarm publicamente."
-      ufw allow 2377/tcp comment "Docker Swarm Manager"
-      ufw allow 7946/tcp comment "Docker Swarm Gossip TCP"
-      ufw allow 7946/udp comment "Docker Swarm Gossip UDP"
-      ufw allow 4789/udp comment "Docker Swarm Overlay"
+      warn "Nenhum IP informado. Por segurança, portas Swarm NÃO serão abertas."
     fi
   fi
 
@@ -204,31 +164,46 @@ init_swarm() {
   fi
 
   log "Inicializando Docker Swarm..."
-
   local advertise_addr
   advertise_addr="$(hostname -I | awk '{print $1}')"
-
   docker swarm init --advertise-addr "$advertise_addr"
 }
 
 create_networks_and_volumes() {
   log "Criando rede e volumes..."
 
-  docker network create \
-    --driver=overlay \
-    --attachable \
-    --scope swarm \
-    "$NETWORK_NAME" 2>/dev/null || true
+  if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
+    echo "Rede $NETWORK_NAME já existe."
+  else
+    docker network create --driver=overlay --attachable --scope swarm "$NETWORK_NAME"
+  fi
 
-  docker volume create "$CERT_VOLUME" >/dev/null
-  docker volume create "$PORTAINER_VOLUME" >/dev/null
+  if docker volume inspect "$CERT_VOLUME" >/dev/null 2>&1; then
+    echo "Volume $CERT_VOLUME já existe."
+  else
+    docker volume create "$CERT_VOLUME" >/dev/null
+  fi
+
+  if docker volume inspect "$PORTAINER_VOLUME" >/dev/null 2>&1; then
+    echo "Volume $PORTAINER_VOLUME já existe."
+  else
+    docker volume create "$PORTAINER_VOLUME" >/dev/null
+  fi
+
+  log "Ajustando permissões do acme.json..."
+  docker pull alpine:3.20
 
   docker run --rm \
     -v "$CERT_VOLUME":/data \
-    alpine sh -c "touch /data/acme.json && chmod 600 /data/acme.json"
+    alpine:3.20 \
+    sh -c "touch /data/acme.json && chmod 600 /data/acme.json"
+
+  log "Rede e volumes prontos."
 }
 
 prepare_install_dir() {
+  log "Preparando diretório $INSTALL_DIR..."
+
   mkdir -p "$INSTALL_DIR"
 
   [ -f "$INSTALL_DIR/traefik-stack.yml" ] \
@@ -355,6 +330,15 @@ volumes:
 EOF
 }
 
+verify_stack_files() {
+  log "Conferindo arquivos gerados..."
+
+  ls -lah "$INSTALL_DIR"
+
+  [ -s "$INSTALL_DIR/traefik-stack.yml" ] || fail "Arquivo traefik-stack.yml não foi gerado."
+  [ -s "$INSTALL_DIR/portainer-stack.yml" ] || fail "Arquivo portainer-stack.yml não foi gerado."
+}
+
 deploy_stacks() {
   log "Deploy Traefik..."
   docker stack deploy -c "$INSTALL_DIR/traefik-stack.yml" "$TRAEFIK_STACK"
@@ -436,7 +420,7 @@ install_flow() {
 
   if [ "$CLUSTER_MODE" = "s" ]; then
     echo ""
-    read -rp "Informe o IP permitido para portas Swarm. Deixe vazio para abrir público: " CLUSTER_ALLOWED_IP
+    read -rp "Informe o IP permitido para portas Swarm. Deixe vazio para não abrir: " CLUSTER_ALLOWED_IP
   fi
 
   exec > >(tee -i "$LOGFILE") 2>&1
@@ -453,6 +437,7 @@ install_flow() {
   prepare_install_dir
   write_traefik_stack
   write_portainer_stack
+  verify_stack_files
   deploy_stacks
   wait_services
   show_status
