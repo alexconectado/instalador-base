@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# =============================================================================
-# VPS Bootstrap — Docker Swarm + Traefik + Portainer
-# Ubuntu 22.04/24.04
-# =============================================================================
-
 TRAEFIK_VERSION="v3.0"
 PORTAINER_VERSION="2.21.0"
 
@@ -16,15 +11,15 @@ PORTAINER_STACK="portainer"
 CERT_VOLUME="volume_swarm_certificates"
 PORTAINER_VOLUME="portainer_data"
 
-LOGFILE="/var/log/vps-bootstrap.log"
 INSTALL_DIR="/opt/stacks"
-
-# =============================================================================
-# Funções
-# =============================================================================
+LOGFILE="/var/log/vps-bootstrap.log"
 
 log() {
   echo -e "\n[INFO] $*"
+}
+
+warn() {
+  echo -e "\n[AVISO] $*"
 }
 
 fail() {
@@ -33,15 +28,11 @@ fail() {
 }
 
 check_root() {
-  if [ "$(id -u)" -ne 0 ]; then
-    fail "Execute como root ou com sudo."
-  fi
+  [ "$(id -u)" -eq 0 ] || fail "Execute como root."
 }
 
 check_ubuntu() {
-  if ! grep -qi "ubuntu" /etc/os-release; then
-    fail "Este script foi pensado para Ubuntu 22.04/24.04."
-  fi
+  grep -qi "ubuntu" /etc/os-release || fail "Script pensado para Ubuntu 22.04/24.04."
 }
 
 ask_required() {
@@ -51,22 +42,20 @@ ask_required() {
 
   read -rp "$label: " value
 
-  if [ -z "$value" ]; then
-    fail "$label não pode ficar vazio."
-  fi
+  [ -n "$value" ] || fail "$label não pode ficar vazio."
 
   printf -v "$var_name" "%s" "$value"
 }
 
 validate_email() {
   local email="$1"
-  if ! [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
-    fail "E-mail inválido: $email"
-  fi
+
+  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
+    || fail "E-mail inválido: $email"
 }
 
 install_base_packages() {
-  log "Atualizando pacotes e instalando dependências base..."
+  log "Atualizando sistema e instalando pacotes base..."
 
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
@@ -86,14 +75,14 @@ install_base_packages() {
     fail2ban
 }
 
-install_docker_official() {
+install_docker() {
   if command -v docker >/dev/null 2>&1; then
-    log "Docker já instalado:"
+    log "Docker já instalado."
     docker --version
     return
   fi
 
-  log "Instalando Docker pelo repositório oficial..."
+  log "Instalando Docker oficial..."
 
   for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
     apt-get remove -y "$pkg" >/dev/null 2>&1 || true
@@ -123,7 +112,6 @@ install_docker_official() {
   systemctl enable docker
   systemctl start docker
 
-  log "Docker instalado:"
   docker --version
   docker compose version
 }
@@ -133,13 +121,11 @@ configure_hostname() {
 
   hostnamectl set-hostname "$SERVER_NAME"
 
-  if ! grep -q "$SERVER_NAME" /etc/hosts; then
-    echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
-  fi
+  grep -q "$SERVER_NAME" /etc/hosts || echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
 }
 
 configure_firewall() {
-  log "Configurando firewall UFW..."
+  log "Configurando firewall..."
 
   ufw --force reset
   ufw default deny incoming
@@ -149,14 +135,29 @@ configure_firewall() {
   ufw allow 80/tcp comment "HTTP"
   ufw allow 443/tcp comment "HTTPS"
 
-  ufw --force enable
+  if [ "$CLUSTER_MODE" = "s" ]; then
+    warn "Modo cluster ativado. As portas do Swarm serão abertas."
 
-  log "Firewall ativo:"
+    if [ -n "${CLUSTER_ALLOWED_IP:-}" ]; then
+      ufw allow from "$CLUSTER_ALLOWED_IP" to any port 2377 proto tcp comment "Docker Swarm Manager"
+      ufw allow from "$CLUSTER_ALLOWED_IP" to any port 7946 proto tcp comment "Docker Swarm Gossip TCP"
+      ufw allow from "$CLUSTER_ALLOWED_IP" to any port 7946 proto udp comment "Docker Swarm Gossip UDP"
+      ufw allow from "$CLUSTER_ALLOWED_IP" to any port 4789 proto udp comment "Docker Swarm Overlay"
+    else
+      warn "Nenhum IP de cluster informado. Abrindo portas Swarm publicamente."
+      ufw allow 2377/tcp comment "Docker Swarm Manager"
+      ufw allow 7946/tcp comment "Docker Swarm Gossip TCP"
+      ufw allow 7946/udp comment "Docker Swarm Gossip UDP"
+      ufw allow 4789/udp comment "Docker Swarm Overlay"
+    fi
+  fi
+
+  ufw --force enable
   ufw status verbose
 }
 
 configure_fail2ban() {
-  log "Configurando Fail2Ban para SSH..."
+  log "Configurando Fail2Ban..."
 
   cat > /etc/fail2ban/jail.d/sshd.local <<EOF
 [sshd]
@@ -174,7 +175,7 @@ EOF
 }
 
 validate_dns() {
-  log "Validando DNS do domínio do Portainer..."
+  log "Validando DNS..."
 
   local server_ip
   local domain_ip
@@ -183,22 +184,22 @@ validate_dns() {
   domain_ip="$(dig +short "$PORTAINER_DOMAIN" A | tail -n1 || true)"
 
   echo "IP da VPS: $server_ip"
-  echo "IP do domínio $PORTAINER_DOMAIN: $domain_ip"
+  echo "IP do domínio: $domain_ip"
 
   if [ -z "$domain_ip" ]; then
-    echo "[AVISO] O domínio ainda não resolveu DNS. O SSL pode falhar."
+    warn "Domínio ainda não resolveu DNS. O SSL pode falhar."
     return
   fi
 
   if [ "$server_ip" != "$domain_ip" ]; then
-    echo "[AVISO] O domínio não aponta para o IP atual da VPS."
-    echo "[AVISO] Ajuste o DNS antes de acessar o Portainer com SSL."
+    warn "Domínio não aponta diretamente para o IP da VPS."
+    warn "Se estiver usando Cloudflare proxy ativo, isso pode ser normal."
   fi
 }
 
 init_swarm() {
   if docker info | grep -q "Swarm: active"; then
-    log "Docker Swarm já está ativo."
+    log "Docker Swarm já ativo."
     return
   fi
 
@@ -217,7 +218,7 @@ create_networks_and_volumes() {
     --driver=overlay \
     --attachable \
     --scope swarm \
-    "$NETWORK_NAME" 2>/dev/null || echo "Rede $NETWORK_NAME já existe."
+    "$NETWORK_NAME" 2>/dev/null || true
 
   docker volume create "$CERT_VOLUME" >/dev/null
   docker volume create "$PORTAINER_VOLUME" >/dev/null
@@ -230,17 +231,15 @@ create_networks_and_volumes() {
 prepare_install_dir() {
   mkdir -p "$INSTALL_DIR"
 
-  if [ -f "$INSTALL_DIR/traefik-stack.yml" ]; then
-    cp "$INSTALL_DIR/traefik-stack.yml" "$INSTALL_DIR/traefik-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
-  fi
+  [ -f "$INSTALL_DIR/traefik-stack.yml" ] \
+    && cp "$INSTALL_DIR/traefik-stack.yml" "$INSTALL_DIR/traefik-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
 
-  if [ -f "$INSTALL_DIR/portainer-stack.yml" ]; then
-    cp "$INSTALL_DIR/portainer-stack.yml" "$INSTALL_DIR/portainer-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
-  fi
+  [ -f "$INSTALL_DIR/portainer-stack.yml" ] \
+    && cp "$INSTALL_DIR/portainer-stack.yml" "$INSTALL_DIR/portainer-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
 }
 
 write_traefik_stack() {
-  log "Gerando stack do Traefik..."
+  log "Gerando stack Traefik..."
 
   cat > "$INSTALL_DIR/traefik-stack.yml" <<EOF
 version: "3.8"
@@ -251,23 +250,18 @@ services:
     command:
       - "--api.dashboard=false"
       - "--api.insecure=false"
-
       - "--providers.swarm=true"
       - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
       - "--providers.swarm.exposedbydefault=false"
       - "--providers.swarm.network=${NETWORK_NAME}"
-
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
-
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencryptresolver.acme.email=${LETS_ENCRYPT_EMAIL}"
       - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/letsencrypt/acme.json"
-
       - "--log.level=INFO"
       - "--accesslog=true"
 
@@ -294,8 +288,6 @@ services:
           - node.role == manager
       restart_policy:
         condition: on-failure
-        delay: 5s
-        max_attempts: 5
 
 networks:
   ${NETWORK_NAME}:
@@ -308,7 +300,7 @@ EOF
 }
 
 write_portainer_stack() {
-  log "Gerando stack do Portainer..."
+  log "Gerando stack Portainer..."
 
   cat > "$INSTALL_DIR/portainer-stack.yml" <<EOF
 version: "3.8"
@@ -364,27 +356,23 @@ EOF
 }
 
 deploy_stacks() {
-  log "Deploy do Traefik..."
+  log "Deploy Traefik..."
   docker stack deploy -c "$INSTALL_DIR/traefik-stack.yml" "$TRAEFIK_STACK"
 
-  log "Aguardando Traefik iniciar..."
   sleep 10
 
-  log "Deploy do Portainer..."
+  log "Deploy Portainer..."
   docker stack deploy -c "$INSTALL_DIR/portainer-stack.yml" "$PORTAINER_STACK"
 }
 
 wait_services() {
-  log "Aguardando serviços ficarem prontos..."
+  log "Aguardando serviços..."
 
   for i in {1..40}; do
-    local traefik_replicas
-    local portainer_replicas
-
     traefik_replicas="$(docker service ls --format '{{.Name}} {{.Replicas}}' | grep "${TRAEFIK_STACK}_traefik" | awk '{print $2}' || true)"
     portainer_replicas="$(docker service ls --format '{{.Name}} {{.Replicas}}' | grep "${PORTAINER_STACK}_portainer" | awk '{print $2}' || true)"
 
-    echo "Tentativa $i/40 - Traefik: ${traefik_replicas:-aguardando} | Portainer: ${portainer_replicas:-aguardando}"
+    echo "Tentativa $i/40 | Traefik: ${traefik_replicas:-aguardando} | Portainer: ${portainer_replicas:-aguardando}"
 
     if [[ "$traefik_replicas" == "1/1" && "$portainer_replicas" == "1/1" ]]; then
       log "Serviços ativos."
@@ -394,27 +382,27 @@ wait_services() {
     sleep 5
   done
 
-  echo "[AVISO] Nem todos os serviços ficaram 1/1 dentro do tempo esperado."
+  warn "Verifique os serviços manualmente."
 }
 
 show_status() {
   echo ""
-  echo "======================================================"
-  echo "STATUS FINAL"
-  echo "======================================================"
+  echo "=================================================="
+  echo "INSTALAÇÃO CONCLUÍDA"
+  echo "=================================================="
   docker service ls
   echo ""
   echo "Portainer: https://${PORTAINER_DOMAIN}"
-  echo "Arquivos das stacks: ${INSTALL_DIR}"
+  echo "Stacks: ${INSTALL_DIR}"
   echo "Log: ${LOGFILE}"
   echo ""
   echo "Comandos úteis:"
   echo "docker service ls"
-  echo "docker service logs -f traefik_traefik"
-  echo "docker service logs -f portainer_portainer"
   echo "docker stack ps traefik"
   echo "docker stack ps portainer"
-  echo "======================================================"
+  echo "docker service logs -f traefik_traefik"
+  echo "docker service logs -f portainer_portainer"
+  echo "=================================================="
 }
 
 uninstall() {
@@ -425,62 +413,69 @@ uninstall() {
 
   sleep 15
 
-  log "Removendo rede..."
-  docker network rm "$NETWORK_NAME" || true
-
-  read -rp "Deseja remover volumes também? Isso apaga dados do Portainer e certificados. Digite SIM: " CONFIRM
+  read -rp "Remover volumes também? Isso apaga dados. Digite SIM: " CONFIRM
 
   if [ "$CONFIRM" = "SIM" ]; then
     docker volume rm "$CERT_VOLUME" || true
     docker volume rm "$PORTAINER_VOLUME" || true
   fi
 
-  log "Desinstalação concluída."
+  log "Remoção concluída."
+}
+
+install_flow() {
+  ask_required SERVER_NAME "Nome do servidor"
+  ask_required PORTAINER_DOMAIN "Domínio do Portainer"
+  ask_required LETS_ENCRYPT_EMAIL "E-mail para Let's Encrypt"
+
+  validate_email "$LETS_ENCRYPT_EMAIL"
+
+  echo ""
+  read -rp "Este servidor fará parte de um cluster Swarm futuramente? (s/n): " CLUSTER_MODE
+  CLUSTER_MODE="${CLUSTER_MODE:-n}"
+
+  if [ "$CLUSTER_MODE" = "s" ]; then
+    echo ""
+    read -rp "Informe o IP permitido para portas Swarm. Deixe vazio para abrir público: " CLUSTER_ALLOWED_IP
+  fi
+
+  exec > >(tee -i "$LOGFILE") 2>&1
+
+  check_ubuntu
+  install_base_packages
+  install_docker
+  configure_hostname
+  configure_firewall
+  configure_fail2ban
+  validate_dns
+  init_swarm
+  create_networks_and_volumes
+  prepare_install_dir
+  write_traefik_stack
+  write_portainer_stack
+  deploy_stacks
+  wait_services
+  show_status
 }
 
 main_menu() {
-  echo "======================================================"
-  echo "Bootstrap VPS — Docker Swarm + Traefik + Portainer"
-  echo "======================================================"
+  echo "=================================================="
+  echo "VPS Bootstrap"
+  echo "Docker Swarm + Traefik + Portainer"
+  echo "=================================================="
   echo "1. Instalar / atualizar infraestrutura"
-  echo "2. Remover stacks"
-  echo "======================================================"
+  echo "2. Remover Traefik e Portainer"
+  echo "=================================================="
 
-  read -rp "Escolha uma opção: " CHOICE
+  read -rp "Escolha uma opção: " OPTION
 
-  case "$CHOICE" in
-    1)
-      ask_required SERVER_NAME "Nome do servidor"
-      ask_required PORTAINER_DOMAIN "Domínio do Portainer, ex: painel.seudominio.com.br"
-      ask_required LETS_ENCRYPT_EMAIL "E-mail para Let's Encrypt"
-
-      validate_email "$LETS_ENCRYPT_EMAIL"
-
-      exec > >(tee -i "$LOGFILE") 2>&1
-
-      check_ubuntu
-      install_base_packages
-      install_docker_official
-      configure_hostname
-      configure_firewall
-      configure_fail2ban
-      validate_dns
-      init_swarm
-      create_networks_and_volumes
-      prepare_install_dir
-      write_traefik_stack
-      write_portainer_stack
-      deploy_stacks
-      wait_services
-      show_status
-      ;;
+  case "$OPTION" in
+    1) install_flow ;;
     2)
       exec > >(tee -i "$LOGFILE") 2>&1
       uninstall
       ;;
-    *)
-      fail "Opção inválida."
-      ;;
+    *) fail "Opção inválida." ;;
   esac
 }
 
