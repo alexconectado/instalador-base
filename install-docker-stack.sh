@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 trap 'echo "[ERRO] Falha na linha $LINENO. Comando: $BASH_COMMAND"' ERR
 
-TRAEFIK_VERSION="v3.0"
+TRAEFIK_VERSION="v3.6.14"
 PORTAINER_VERSION="2.21.0"
 
 NETWORK_NAME="network_public"
@@ -31,38 +31,63 @@ ask_required() {
   local var_name="$1"
   local label="$2"
   local value=""
+
   read -rp "$label: " value
   [ -n "$value" ] || fail "$label não pode ficar vazio."
+
   printf -v "$var_name" "%s" "$value"
 }
 
 validate_email() {
   local email="$1"
-  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] || fail "E-mail inválido: $email"
+
+  [[ "$email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]] \
+    || fail "E-mail inválido: $email"
 }
 
 install_base_packages() {
   log "Atualizando sistema e instalando pacotes base..."
+
   apt-get update -y
   DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
-  apt-get install -y ca-certificates curl gnupg lsb-release ufw dnsutils jq htop nano vim unzip fail2ban
+
+  apt-get install -y \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    ufw \
+    dnsutils \
+    jq \
+    htop \
+    nano \
+    vim \
+    unzip \
+    fail2ban
 }
 
-install_docker() {
-  if command -v docker >/dev/null 2>&1; then
-    log "Docker já instalado."
-    docker --version
-    docker compose version || true
-    return
-  fi
+remove_old_docker_packages() {
+  log "Removendo possíveis pacotes Docker antigos/conflitantes..."
 
-  log "Instalando Docker oficial..."
+  apt-get remove -y \
+    docker \
+    docker-engine \
+    docker.io \
+    docker-doc \
+    docker-compose \
+    docker-compose-v2 \
+    podman-docker \
+    containerd \
+    runc 2>/dev/null || true
+}
 
-  for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
-    apt-get remove -y "$pkg" >/dev/null 2>&1 || true
-  done
+install_docker_official_repo() {
+  log "Instalando Docker pelo repositório oficial..."
 
   install -m 0755 -d /etc/apt/keyrings
+
+  rm -f /etc/apt/keyrings/docker.gpg
+  rm -f /etc/apt/sources.list.d/docker.list
 
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
@@ -73,19 +98,96 @@ install_docker() {
     > /etc/apt/sources.list.d/docker.list
 
   apt-get update -y
-  apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+  apt-get install -y \
+    docker-ce \
+    docker-ce-cli \
+    containerd.io \
+    docker-buildx-plugin \
+    docker-compose-plugin
 
   systemctl enable docker
-  systemctl start docker
+  systemctl restart docker
+}
+
+validate_docker_api() {
+  log "Validando Docker e versão da API..."
 
   docker --version
-  docker compose version
+  docker compose version || true
+
+  local api_version
+  api_version="$(docker version --format '{{.Server.APIVersion}}' 2>/dev/null || true)"
+
+  [ -n "$api_version" ] || fail "Não foi possível obter a API version do Docker."
+
+  echo "Docker Server API version: $api_version"
+
+  local major minor
+  major="$(echo "$api_version" | cut -d. -f1)"
+  minor="$(echo "$api_version" | cut -d. -f2)"
+
+  if [ "$major" -lt 1 ] || { [ "$major" -eq 1 ] && [ "$minor" -lt 40 ]; }; then
+    fail "Docker API muito antiga: $api_version. Mínimo necessário: 1.40."
+  fi
+}
+
+install_docker() {
+  if command -v docker >/dev/null 2>&1; then
+    log "Docker já instalado. Validando..."
+    validate_docker_api
+    return
+  fi
+
+  remove_old_docker_packages
+  install_docker_official_repo
+  validate_docker_api
+}
+
+reset_docker_if_requested() {
+  echo ""
+  read -rp "Deseja resetar completamente o Docker antes de instalar? Isso apaga containers, imagens, volumes e Swarm. (s/n): " RESET_DOCKER
+  RESET_DOCKER="${RESET_DOCKER:-n}"
+
+  if [ "$RESET_DOCKER" != "s" ]; then
+    return
+  fi
+
+  warn "Reset completo do Docker solicitado."
+  warn "Todos os containers, imagens, volumes, redes e Swarm serão removidos."
+
+  read -rp "Digite RESET para confirmar: " CONFIRM_RESET
+  [ "$CONFIRM_RESET" = "RESET" ] || fail "Reset cancelado."
+
+  docker stack rm "$PORTAINER_STACK" 2>/dev/null || true
+  docker stack rm "$TRAEFIK_STACK" 2>/dev/null || true
+  sleep 15
+
+  if docker info 2>/dev/null | grep -q "Swarm: active"; then
+    docker swarm leave --force || true
+  fi
+
+  systemctl stop docker 2>/dev/null || true
+  systemctl stop containerd 2>/dev/null || true
+
+  remove_old_docker_packages
+
+  rm -rf /var/lib/docker
+  rm -rf /var/lib/containerd
+  rm -rf /etc/docker
+
+  install_docker_official_repo
+  validate_docker_api
 }
 
 configure_hostname() {
   log "Configurando hostname..."
+
   hostnamectl set-hostname "$SERVER_NAME"
-  grep -q "$SERVER_NAME" /etc/hosts || echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
+
+  if ! grep -q "$SERVER_NAME" /etc/hosts; then
+    echo "127.0.0.1 $SERVER_NAME" >> /etc/hosts
+  fi
 }
 
 configure_firewall() {
@@ -164,8 +266,10 @@ init_swarm() {
   fi
 
   log "Inicializando Docker Swarm..."
+
   local advertise_addr
   advertise_addr="$(hostname -I | awk '{print $1}')"
+
   docker swarm init --advertise-addr "$advertise_addr"
 }
 
@@ -175,7 +279,11 @@ create_networks_and_volumes() {
   if docker network inspect "$NETWORK_NAME" >/dev/null 2>&1; then
     echo "Rede $NETWORK_NAME já existe."
   else
-    docker network create --driver=overlay --attachable --scope swarm "$NETWORK_NAME"
+    docker network create \
+      --driver=overlay \
+      --attachable \
+      --scope swarm \
+      "$NETWORK_NAME"
   fi
 
   if docker volume inspect "$CERT_VOLUME" >/dev/null 2>&1; then
@@ -191,6 +299,7 @@ create_networks_and_volumes() {
   fi
 
   log "Ajustando permissões do acme.json..."
+
   docker pull alpine:3.20
 
   docker run --rm \
@@ -224,21 +333,32 @@ version: "3.8"
 services:
   traefik:
     image: traefik:${TRAEFIK_VERSION}
+
+    environment:
+      - DOCKER_API_VERSION=1.41
+
     command:
       - "--api.dashboard=false"
       - "--api.insecure=false"
+
       - "--providers.swarm=true"
       - "--providers.swarm.endpoint=unix:///var/run/docker.sock"
       - "--providers.swarm.exposedbydefault=false"
       - "--providers.swarm.network=${NETWORK_NAME}"
+      - "--providers.swarm.watch=true"
+      - "--providers.swarm.refreshseconds=15"
+
       - "--entrypoints.web.address=:80"
       - "--entrypoints.websecure.address=:443"
+
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge=true"
       - "--certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web"
       - "--certificatesresolvers.letsencryptresolver.acme.email=${LETS_ENCRYPT_EMAIL}"
       - "--certificatesresolvers.letsencryptresolver.acme.storage=/etc/traefik/letsencrypt/acme.json"
+
       - "--log.level=INFO"
       - "--accesslog=true"
 
@@ -265,6 +385,8 @@ services:
           - node.role == manager
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 5
 
 networks:
   ${NETWORK_NAME}:
@@ -321,6 +443,7 @@ services:
         - "traefik.http.routers.portainer.tls.certresolver=letsencryptresolver"
         - "traefik.http.routers.portainer.service=portainer"
         - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+        - "traefik.docker.network=${NETWORK_NAME}"
 
 networks:
   ${NETWORK_NAME}:
@@ -424,6 +547,8 @@ install_flow() {
     echo ""
     read -rp "Informe o IP permitido para portas Swarm. Deixe vazio para não abrir: " CLUSTER_ALLOWED_IP
   fi
+
+  reset_docker_if_requested
 
   exec > >(tee -i "$LOGFILE") 2>&1
 
