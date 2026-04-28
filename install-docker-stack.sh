@@ -206,11 +206,13 @@ prepare_install_dir() {
 
   mkdir -p "$INSTALL_DIR"
 
-  [ -f "$INSTALL_DIR/traefik-stack.yml" ] \
-    && cp "$INSTALL_DIR/traefik-stack.yml" "$INSTALL_DIR/traefik-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
+  if [ -f "$INSTALL_DIR/traefik-stack.yml" ]; then
+    cp "$INSTALL_DIR/traefik-stack.yml" "$INSTALL_DIR/traefik-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
+  fi
 
-  [ -f "$INSTALL_DIR/portainer-stack.yml" ] \
-    && cp "$INSTALL_DIR/portainer-stack.yml" "$INSTALL_DIR/portainer-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
+  if [ -f "$INSTALL_DIR/portainer-stack.yml" ]; then
+    cp "$INSTALL_DIR/portainer-stack.yml" "$INSTALL_DIR/portainer-stack.yml.bak.$(date +%Y%m%d%H%M%S)"
+  fi
 }
 
 write_traefik_stack() {
